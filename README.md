@@ -370,7 +370,7 @@ Create a `.env` file from `.env.example`:
 
 ```env
 # Database
-DATABASE_URL=postgresql://user:password@localhost:5432/ocr_db
+DATABASE_URL=postgresql://user:password@localhost:5433/ocr_db
 
 # Redis (Celery broker)
 REDIS_URL=redis://localhost:6379/0
