@@ -1,6 +1,6 @@
 # 📄 NanoOCR — Internal Document OCR System
 
-> An internal Optical Character Recognition (OCR) system powered by **GLM-OCR**, featuring a FastAPI backend, PostgreSQL database, async task processing, and a React frontend that renders recognized text as structured **Markdown**.
+> An internal Optical Character Recognition (OCR) system powered by **Qwen3-VL-4B-Instruct**, featuring a FastAPI backend, PostgreSQL database, async task processing, and a React frontend that renders recognized text as structured **Markdown**.
 
 ---
 
@@ -24,14 +24,14 @@
 
 ## Project Overview
 
-NanoOCR is built to digitize, store, and retrieve internal organization documents from images or PDFs. Users upload a file, the system processes it through the **GLM-OCR** model, and returns the recognized content structured as **Markdown**. All processing history is persisted in the database for future retrieval and search.
+NanoOCR is built to digitize, store, and retrieve internal organization documents from images or PDFs. Users upload a file, the system processes it through the **Qwen3-VL-4B-Instruct** model, and returns the recognized content structured as **Markdown**. All processing history is persisted in the database for future retrieval and search.
 
 ### Key Features
 
 | Feature | Description |
 |---|---|
 | 📤 File Upload | Supports images (JPG, PNG, TIFF, WebP) and PDF |
-| 🤖 Automatic OCR | Processed by the GLM-OCR model |
+| 🤖 Automatic OCR | Processed by the Qwen3-VL-4B-Instruct model |
 | 📝 Markdown Output | Results returned as structured, formatted Markdown |
 | 🗃️ Full CRUD | Create, read, update, and delete documents |
 | 🔍 Full-text Search | Search across all OCR-recognized content |
@@ -48,13 +48,13 @@ NanoOCR is built to digitize, store, and retrieve internal organization document
 └──────────────────────────┬──────────────────────────────┘
                            │ HTTP / REST API
 ┌──────────────────────────▼──────────────────────────────┐
-│                   BACKEND (FastAPI)                      │
+│                   BACKEND (FastAPI)                     │
 │   /upload  │  /ocr  │  /documents CRUD  │  /search      │
 └──────────┬──────────────────────────────────────────────┘
            │                        │
 ┌──────────▼──────────┐   ┌─────────▼────────────────────┐
-│   GLM-OCR Engine    │   │   PostgreSQL Database         │
-│  (Model Inference)  │   │   documents / ocr_results     │
+│ Qwen3-VL-4B Engine  │   │   PostgreSQL Database        │
+│  (Model Inference)  │   │   documents / ocr_results    │
 └─────────────────────┘   └──────────────────────────────┘
 ```
 
@@ -65,7 +65,7 @@ NanoOCR is built to digitize, store, and retrieve internal organization document
 ### Backend
 - **Python 3.11+**
 - **FastAPI** — REST API framework
-- **GLM-OCR** — Character recognition model (based on ChatGLM)
+- **Qwen3-VL-4B-Instruct** — Vision-Language model for OCR (Qwen3 series by Alibaba)
 - **SQLAlchemy** — ORM
 - **Alembic** — Database migrations
 - **Celery + Redis** — Async task queue for OCR processing
@@ -112,7 +112,7 @@ NanoOCR/
 │   │   │   ├── document.py              # Pydantic schemas
 │   │   │   └── ocr_result.py
 │   │   ├── services/
-│   │   │   ├── ocr_service.py           # GLM-OCR inference logic
+│   │   │   ├── ocr_service.py           # Qwen3-VL-4B-Instruct inference logic
 │   │   │   ├── storage_service.py       # File upload & storage
 │   │   │   └── markdown_service.py      # Markdown formatting
 │   │   ├── tasks/
@@ -192,7 +192,7 @@ CREATE TABLE ocr_results (
     confidence      FLOAT,                          -- Overall confidence score (0.0 – 1.0)
     language        VARCHAR(20) DEFAULT 'en',       -- Detected language
     page_count      INTEGER DEFAULT 1,              -- Number of pages (for PDFs)
-    model_version   VARCHAR(50),                    -- GLM-OCR model version used
+    model_version   VARCHAR(50),                    -- Qwen3-VL-4B-Instruct model version used
     processing_time FLOAT,                          -- Processing duration in seconds
     error_message   TEXT,                           -- Error details if failed
     created_at      TIMESTAMPTZ DEFAULT NOW()
@@ -318,7 +318,7 @@ Displays:
 - Docker & Docker Compose
 - Python 3.11+ (for local setup without Docker)
 - Node.js 18+ (for local setup without Docker)
-- GPU recommended for GLM-OCR (CUDA 11.8+)
+- GPU recommended for Qwen3-VL-4B-Instruct (CUDA 11.8+)
 
 ### Quick Start with Docker
 
@@ -381,9 +381,10 @@ STORAGE_ACCESS_KEY=minioadmin
 STORAGE_SECRET_KEY=minioadmin
 STORAGE_BUCKET=ocr-documents
 
-# GLM-OCR Model
-GLM_OCR_MODEL_PATH=./models/glm-ocr
-GLM_OCR_DEVICE=cuda          # or cpu
+# OCR Model
+OCR_MODEL_PATH=./models/Qwen3-VL-4B-Instruct
+OCR_MODEL_NAME=Qwen/Qwen3-VL-4B-Instruct
+OCR_DEVICE=cuda
 
 # App
 SECRET_KEY=your-secret-key-here
@@ -414,7 +415,7 @@ Use the search bar to perform a full-text search across all previously processed
 
 ## Markdown Output Format
 
-The GLM-OCR model combined with `markdown_service` automatically structures the output:
+The Qwen3-VL-4B-Instruct model combined with `markdown_service` automatically structures the output:
 
 ````markdown
 # Document Title

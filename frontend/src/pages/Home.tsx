@@ -19,7 +19,7 @@ export default function Home() {
             <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <span className="text-xl font-bold text-sky-600">NanoOCR</span>
-                    <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">GLM-OCR</span>
+                    <span className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">Qwen3-VL-4B-Instruct</span>
                 </div>
                 <button
                     onClick={() => navigate('/dashboard')}

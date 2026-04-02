@@ -31,11 +31,12 @@ class Settings(BaseSettings):
     STORAGE_BUCKET: str = "ocr-documents"
     STORAGE_USE_SSL: bool = False
 
-    # ----------- GLM-OCR Model -------------
-    GLM_OCR_MODEL_PATH: str = "./models/glm-ocr"
-    GLM_OCR_DEVICE: str = "cuda"          # cuda | cpu
-    GLM_OCR_MAX_NEW_TOKENS: int = 2048
-    GLM_OCR_BATCH_SIZE: int = 1
+    # ----------- OCR Model -------------
+    OCR_MODEL_PATH: str = "./models/Qwen3-VL-4B-Instruct"
+    OCR_MODEL_NAME: str = "Qwen/Qwen3-VL-4B-Instruct"
+    OCR_DEVICE: str = "cuda"
+    OCR_MAX_NEW_TOKENS: int = 2048
+    OCR_BATCH_SIZE: int = 1
 
     # ----------- Upload -------------
     MAX_UPLOAD_SIZE_MB: int = 50

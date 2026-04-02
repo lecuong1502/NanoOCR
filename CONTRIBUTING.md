@@ -49,7 +49,7 @@ By participating in this project, you agree to maintain a respectful and constru
 
 ```
 NanoOCR/
-├── backend/       # FastAPI app, GLM-OCR service, database models
+├── backend/       # FastAPI app, Qwen3-VL-4B-Instruct service, database models
 ├── frontend/      # React + TypeScript UI
 ├── docker-compose.yml
 ├── .env.example
