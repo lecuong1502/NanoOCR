@@ -19,7 +19,7 @@ minio==7.2.5                     # MinIO SDK (optional alternative)
 
 # ── OCR ────────────────────────────────────────────────────
 torch==2.3.0
-transformers>=4.51.0
+transformers @ git+https://github.com/huggingface/transformers
 accelerate>=0.26.0          # multi-GPU / device_map support
 qwen-vl-utils>=0.0.10       # Qwen VL image processing utilities
 Pillow==10.3.0

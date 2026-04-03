@@ -388,7 +388,7 @@ OCR_DEVICE=cuda
 
 # App
 SECRET_KEY=your-secret-key-here
-ALLOWED_ORIGINS=http://localhost:3000
+ALLOWED_ORIGINS=["http://localhost:3000"]
 ```
 
 ---

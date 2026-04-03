@@ -1,53 +1,73 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from __future__ import annotations
+
+import json
 from functools import lru_cache
 from typing import List
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
-    # ----------- App -----------
+    # ── App ────────────────────────────────────────────────
     APP_NAME: str = "NanoOCR"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
     SECRET_KEY: str = "change-me-in-production"
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 
-    # ----------- Database ------------
-    DATABASE_URL: str = "postgresql://ocr_user:ocr_pass@localhost:5433/ocr_db"
+    # ── Database ───────────────────────────────────────────
+    DATABASE_URL: str = "postgresql://ocr_user:ocr_pass@localhost:5432/ocr_db"
 
-    # ----------- Redis / Celery ------------
+    # ── Redis / Celery ─────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
 
-    # ----------- Storage (MiniIO / S3) -------------
+    # ── Storage (MinIO / S3) ───────────────────────────────
     STORAGE_ENDPOINT: str = "http://localhost:9000"
     STORAGE_ACCESS_KEY: str = "minioadmin"
     STORAGE_SECRET_KEY: str = "minioadmin"
     STORAGE_BUCKET: str = "ocr-documents"
     STORAGE_USE_SSL: bool = False
 
-    # ----------- OCR Model -------------
+    # ── Qwen3-VL OCR Model ─────────────────────────────────
     OCR_MODEL_PATH: str = "./models/Qwen3-VL-4B-Instruct"
     OCR_MODEL_NAME: str = "Qwen/Qwen3-VL-4B-Instruct"
     OCR_DEVICE: str = "cuda"
     OCR_MAX_NEW_TOKENS: int = 2048
     OCR_BATCH_SIZE: int = 1
 
-    # ----------- Upload -------------
+    # ── Upload ─────────────────────────────────────────────
     MAX_UPLOAD_SIZE_MB: int = 50
     ALLOWED_EXTENSIONS: List[str] = [
         ".jpg", ".jpeg", ".png", ".tiff", ".tif", ".webp", ".pdf"
     ]
 
+    # ── Validators ─────────────────────────────────────────
+    @field_validator("ALLOWED_ORIGINS", "ALLOWED_EXTENSIONS", mode="before")
+    @classmethod
+    def parse_list_field(cls, v):
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                return json.loads(v)
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v
+
+
 @lru_cache
 def get_settings() -> Settings:
-    """Return a cached singleton of Settings."""
     return Settings()
 
-# Convenient module-level import: from app.core.config import settings
+
 settings = get_settings()

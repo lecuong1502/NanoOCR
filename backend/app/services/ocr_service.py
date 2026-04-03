@@ -5,7 +5,7 @@ import time
 
 import torch
 from PIL import Image
-from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
 from qwen_vl_utils import process_vision_info
 from pdf2image import convert_from_bytes
 
@@ -16,10 +16,10 @@ logger = get_logger(__name__)
 
 # ── Model singleton ────────────────────────────────────────
 _processor: AutoProcessor | None = None
-_model: Qwen2_5_VLForConditionalGeneration | None = None
+_model: Qwen3VLForConditionalGeneration | None = None
 
 
-def _load_model() -> tuple[AutoProcessor, Qwen2_5_VLForConditionalGeneration]:
+def _load_model() -> tuple[AutoProcessor, Qwen3VLForConditionalGeneration]:
     global _processor, _model
     if _model is None:
         logger.info(f"Loading model: {settings.OCR_MODEL_NAME} ...")
@@ -27,7 +27,7 @@ def _load_model() -> tuple[AutoProcessor, Qwen2_5_VLForConditionalGeneration]:
             settings.OCR_MODEL_NAME,
             cache_dir=settings.OCR_MODEL_PATH,
         )
-        _model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        _model = Qwen3VLForConditionalGeneration.from_pretrained(
             settings.OCR_MODEL_NAME,
             cache_dir=settings.OCR_MODEL_PATH,
             torch_dtype=torch.float16 if settings.OCR_DEVICE == "cuda" else torch.float32,
@@ -50,7 +50,7 @@ OCR_PROMPT = (
 
 def _build_prompt() -> str:
     """
-    Build prompt manually using Qwen2.5-VL's ChatML format:
+    Build prompt manually using Qwen3-VL's ChatML format:
  
     <|im_start|>system
     You are a helpful assistant.<|im_end|>
@@ -72,7 +72,7 @@ def _build_prompt() -> str:
 # ── Core Inference ─────────────────────────────────────────
 
 def _run_inference(image: Image.Image) -> str:
-    """Run Qwen2.5-VL on a single PIL image and return Markdown text."""
+    """Run Qwen3-VL on a single PIL image and return Markdown text."""
     processor, model, tokenizer = _load_model()
 
     messages = [
@@ -85,7 +85,7 @@ def _run_inference(image: Image.Image) -> str:
         }
     ]
 
-    # Build prompt manually — chuẩn ChatML format của Qwen2.5-VL
+    # Build prompt manually — chuẩn ChatML format của Qwen3-VL
     text_input = _build_prompt()
 
     # Extract image tensors via qwen_vl_utils

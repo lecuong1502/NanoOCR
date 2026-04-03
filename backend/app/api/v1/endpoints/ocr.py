@@ -2,61 +2,39 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from db.session import get_db
 from app.core.logging import get_logger
 from app.models.document import DocumentStatus
+from app.models.ocr_result import OcrResult
 from app.schemas.ocr_result import OcrResultResponse, OcrStatusResponse
 from app.services import document_service, ocr_result_service
-from app.services.storage_service import download_file
+from app.tasks.ocr_tasks import run_ocr
 
 logger = get_logger(__name__)
 router = APIRouter()
 
 
-def _run_ocr_task(document_id: uuid.UUID) -> None:
-    """Background task: download file → run OCR → persist result."""
-    from db.session import SessionLocal
-    from app.services.ocr_service import process_image, process_pdf
-
-    db = SessionLocal()
-    try:
-        doc = document_service.get_document(db, document_id)
-        doc.status = DocumentStatus.PROCESSING
-        db.commit()
-
-        file_bytes = download_file(doc.file_path)
-
-        if doc.file_type.value == "pdf":
-            output = process_pdf(file_bytes)
-        else:
-            output = process_image(file_bytes, mime_type=doc.mime_type or "image/jpeg")
-
-        ocr_result_service.create_or_update_ocr_result(db, doc, output)
-        logger.info(f"OCR completed for document {document_id}")
-    
-    except Exception as exc:
-        logger.exception(f"OCR failed for document {document_id}: {exc}")
-        try:
-            ocr_result_service.save_ocr_error(db, doc, str(exc))
-        except Exception:
-            pass
-    finally:
-        db.close()
-
-
 @router.post("/process/{document_id}", response_model=OcrStatusResponse)
 def trigger_ocr(
     document_id: uuid.UUID,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Trigger OCR processing for a document. Runs in the background."""
+    """Enqueue OCR task for a document. Processed asynchronously via Celery."""
     doc = document_service.get_document(db, document_id)
-    background_tasks.add_task(_run_ocr_task, document_id)
-    return OcrStatusResponse(document_id=doc.id, status=DocumentStatus.PROCESSING)
+
+    run_ocr.apply_async(
+        args=[str(document_id)],
+        queue="ocr",
+        task_id=f"ocr-{document_id}",
+    )
+
+    return OcrStatusResponse(
+        document_id=doc.id,
+        status=DocumentStatus.PROCESSING,
+    )
 
 
 @router.get("/result/{document_id}", response_model=OcrResultResponse)
@@ -75,9 +53,8 @@ def get_ocr_status(
 ):
     """Return the current processing status of a document."""
     doc = document_service.get_document(db, document_id)
-    result = db.query(__import__("app.models.ocr_result", fromlist=["OcrResult"]).OcrResult).filter_by(
-        document_id=document_id
-    ).first()
+    result = db.query(OcrResult).filter_by(document_id=document_id).first()
+
     return OcrStatusResponse(
         document_id=doc.id,
         status=doc.status,
