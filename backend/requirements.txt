@@ -26,6 +26,7 @@ Pillow==10.3.0
 pdf2image==1.17.0
 huggingface_hub>=0.23.0
 qwen-vl-utils
+torchvision
 
 # ── Validation & Config ────────────────────────────────────
 pydantic==2.7.1

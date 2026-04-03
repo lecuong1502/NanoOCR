@@ -1,7 +1,7 @@
 from fastapi import Depends, UploadFile
 from sqlalchemy.orm import Session
 
-from db.session import get_db
+from app.db.session import get_db
 from app.core.config import settings
 from app.core.exceptions import UnsupportedFileTypeException, FileTooLargeException
 
@@ -26,6 +26,6 @@ async def validate_upload_file(file: UploadFile) -> UploadFile:
         raise FileTooLargeException(settings.MAX_UPLOAD_SIZE_MB)
 
     # Reset stream so downstream handlers can re-read the file
-    await file.seek()
+    await file.seek(0)
 
     return file

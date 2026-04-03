@@ -75,14 +75,17 @@ def get_file_url(object_name: str, expires_hours: int = 24) -> str:
 def download_file(object_name: str) -> bytes:
     """Download raw bytes from MinIO."""
     client = get_minio_client()
+    response = None
     try:
         response = client.get_object(settings.STORAGE_BUCKET, object_name)
         return response.read()
     except S3Error as e:
+        logger.error(f"Failed to download file {object_name}: {e}")
         raise StorageException(f"Failed to download file: {e}")
     finally:
-        response.close()
-        response.release_conn()
+        if response:
+            response.close()
+            response.release_conn()
 
 
 def delete_file(object_name: str) -> None:

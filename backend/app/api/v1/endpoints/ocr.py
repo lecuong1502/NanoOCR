@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from db.session import get_db
+from app.db.session import get_db
 from app.core.logging import get_logger
 from app.models.document import DocumentStatus
 from app.models.ocr_result import OcrResult

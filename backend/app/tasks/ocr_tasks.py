@@ -21,7 +21,7 @@ class OcrTask(Task):
     @property
     def db(self):
         if self._db is None:
-            from db.session import SessionLocal
+            from app.db.session import SessionLocal
             self._db = SessionLocal()
         return self._db
     

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import validate_upload_file
 from app.core.exceptions import DocumentNotFoundException
-from db.session import get_db
+from app.db.session import get_db
 from app.schemas.document import (
     DocumentResponse,
     DocumentUpdate,
