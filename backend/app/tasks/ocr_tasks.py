@@ -21,7 +21,10 @@ class OcrTask(Task):
     @property
     def db(self):
         if self._db is None:
-            from app.db.session import SessionLocal
+            from sqlalchemy.orm import sessionmaker
+            from app.db.session import get_engine
+            engine = get_engine()
+            SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
             self._db = SessionLocal()
         return self._db
     

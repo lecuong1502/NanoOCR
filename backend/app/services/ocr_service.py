@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import base64
 import io
 import time
 
-import torch
+import httpx
 from PIL import Image
-from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
-from qwen_vl_utils import process_vision_info
 from pdf2image import convert_from_bytes
 
 from app.core.config import settings
@@ -14,31 +13,6 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-# ── Model singleton ────────────────────────────────────────
-_processor: AutoProcessor | None = None
-_model: Qwen3VLForConditionalGeneration | None = None
-
-
-def _load_model() -> tuple[AutoProcessor, Qwen3VLForConditionalGeneration]:
-    global _processor, _model
-    if _model is None:
-        logger.info(f"Loading model: {settings.OCR_MODEL_NAME} ...")
-        _processor = AutoProcessor.from_pretrained(
-            settings.OCR_MODEL_NAME,
-            cache_dir=settings.OCR_MODEL_PATH,
-        )
-        _model = Qwen3VLForConditionalGeneration.from_pretrained(
-            settings.OCR_MODEL_NAME,
-            cache_dir=settings.OCR_MODEL_PATH,
-            torch_dtype=torch.float16 if settings.OCR_DEVICE == "cuda" else torch.float32,
-            device_map=settings.OCR_DEVICE,
-        )
-        _model.eval()
-        logger.info("Model loaded successfully.")
-    return _processor, _model 
-
-
-# ── OCR Prompt ─────────────────────────────────────────────
 OCR_PROMPT = (
     "You are an expert OCR engine. "
     "Extract ALL text from the image exactly as it appears. "
@@ -48,84 +22,44 @@ OCR_PROMPT = (
 )
 
 
-def _build_prompt() -> str:
-    """
-    Build prompt manually using Qwen3-VL's ChatML format:
- 
-    <|im_start|>system
-    You are a helpful assistant.<|im_end|>
-    <|im_start|>user
-    <|vision_start|><|image_pad|><|vision_end|>
-    {user message}<|im_end|>
-    <|im_start|>assistant
-    """
-    return (
-        "<|im_start|>system\n"
-        "You are a helpful assistant.<|im_end|>\n"
-        "<|im_start|>user\n"
-        "<|vision_start|><|image_pad|><|vision_end|>\n"
-        f"{OCR_PROMPT}<|im_end|>\n"
-        "<|im_start|>assistant\n"
-    )
+def _image_to_base64(image: Image.Image) -> str:
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
-
-# ── Core Inference ─────────────────────────────────────────
 
 def _run_inference(image: Image.Image) -> str:
-    """Run Qwen3-VL on a single PIL image and return Markdown text."""
-    processor, model, tokenizer = _load_model()
+    """Call Ollama /api/chat with vision support."""
+    image_b64 = _image_to_base64(image)
 
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": image},
-                {"type": "text",  "text": OCR_PROMPT},
-            ],
-        }
-    ]
-
-    # Build prompt manually — chuẩn ChatML format của Qwen3-VL
-    text_input = _build_prompt()
-
-    # Extract image tensors via qwen_vl_utils
-    image_inputs, video_inputs = process_vision_info(messages)
-
-    # Build model inputs
-    inputs = processor(
-        text=[text_input],
-        images=image_inputs,
-        videos=video_inputs,
-        return_tensors="pt",
-        padding=True,
-    )
-
-    inputs = {
-        k: v.to(settings.OCR_DEVICE) if isinstance(v, torch.Tensor) else v 
-        for k, v in inputs.items()
+    # /api/chat supports multimodal (vision) models
+    payload = {
+        "model": settings.OCR_MODEL_NAME,
+        "messages": [
+            {
+                "role": "user",
+                "content": OCR_PROMPT,
+                "images": [image_b64],
+            }
+        ],
+        "stream": False,
+        "options": {
+            "temperature": 0,
+            "num_predict": settings.OCR_MAX_NEW_TOKENS,
+        },
     }
 
-    # Generate
-    with torch.no_grad():
-        output_ids = model.generate(
-            **inputs,
-            max_new_tokens=settings.OCR_MAX_NEW_TOKENS,
-            do_sample=False,
+    try:
+        response = httpx.post(
+            f"{settings.OLLAMA_BASE_URL}/api/chat",
+            json=payload,
+            timeout=300.0,
         )
+        response.raise_for_status()
+        return response.json()["message"]["content"].strip()
+    except httpx.HTTPError as e:
+        raise RuntimeError(f"Ollama API error: {e}")
 
-    # Trim prompt tokens, decode output only
-    generated_ids_trimmed = [
-        out_ids[len(in_ids):]
-        for in_ids, out_ids in zip(inputs.input_ids, output_ids)
-    ]
-    return processor.batch_decode(
-        generated_ids_trimmed,
-        skip_special_tokens=True,
-        clean_up_tokenization_spaces=False,
-    )[0].strip()
-
-
-# ── Output dataclass ───────────────────────────────────────
 
 class OcrOutput:
     def __init__(
@@ -147,10 +81,7 @@ class OcrOutput:
         self.model_version = model_version
 
 
-# ── Public API ─────────────────────────────────────────────
-
 def process_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> OcrOutput:
-    """OCR a single image and return structured output."""
     start = time.perf_counter()
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     markdown = _run_inference(image)
@@ -168,7 +99,6 @@ def process_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> OcrOutpu
 
 
 def process_pdf(pdf_bytes: bytes, dpi: int = 200) -> OcrOutput:
-    """Convert PDF pages to images then OCR each page."""
     start = time.perf_counter()
     images = convert_from_bytes(pdf_bytes, dpi=dpi)
     page_count = len(images)
@@ -195,7 +125,6 @@ def process_pdf(pdf_bytes: bytes, dpi: int = 200) -> OcrOutput:
 
 
 def _detect_language(text: str) -> str:
-    """Naive language detection based on Unicode character ranges."""
     sample = text[:500]
     vietnamese_chars = sum(1 for c in sample if "\u00c0" <= c <= "\u1ef9")
     if vietnamese_chars > 10:

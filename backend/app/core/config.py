@@ -16,34 +16,32 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # ── App ────────────────────────────────────────────────
+    # ── App ──
     APP_NAME: str = "NanoOCR"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
     SECRET_KEY: str = "change-me-in-production"
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 
-    # ── Database ───────────────────────────────────────────
-    DATABASE_URL: str = "postgresql://ocr_user:ocr_pass@localhost:5432/ocr_db"
+    # ── Database ──
+    DATABASE_URL: str = "postgresql://ocr_user:ocr_pass@localhost:5433/ocr_db"
 
-    # ── Redis / Celery ─────────────────────────────────────
-    REDIS_URL: str = "redis://localhost:6379/0"
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
+    # ── Redis / Celery ──
+    REDIS_URL: str = "redis://localhost:6380/0"
+    CELERY_BROKER_URL: str = "redis://localhost:6380/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6380/1"
 
-    # ── Storage (MinIO / S3) ───────────────────────────────
+    # ── Storage (MinIO / S3) ──
     STORAGE_ENDPOINT: str = "http://localhost:9000"
     STORAGE_ACCESS_KEY: str = "minioadmin"
     STORAGE_SECRET_KEY: str = "minioadmin"
     STORAGE_BUCKET: str = "ocr-documents"
     STORAGE_USE_SSL: bool = False
 
-    # ── Qwen3-VL OCR Model ─────────────────────────────────
-    OCR_MODEL_PATH: str = "./models/Qwen3-VL-4B-Instruct"
-    OCR_MODEL_NAME: str = "Qwen/Qwen3-VL-4B-Instruct"
-    OCR_DEVICE: str = "cuda"
+    # ── Ollama ─────────────────────────────────────────────
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OCR_MODEL_NAME: str = "adelnazmy2002/Qwen3-VL-4B-Instruct:Q4_K_M" 
     OCR_MAX_NEW_TOKENS: int = 2048
-    OCR_BATCH_SIZE: int = 1
 
     # ── Upload ─────────────────────────────────────────────
     MAX_UPLOAD_SIZE_MB: int = 50
@@ -65,7 +63,7 @@ class Settings(BaseSettings):
         return v
 
 
-@lru_cache
+# @lru_cache  # removed to fix caching issue
 def get_settings() -> Settings:
     return Settings()
 
