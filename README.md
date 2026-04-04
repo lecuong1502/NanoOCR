@@ -1,6 +1,6 @@
 # 📄 NanoOCR — Internal Document OCR System
 
-> An internal Optical Character Recognition (OCR) system powered by **Qwen3-VL-4B-Instruct**, featuring a FastAPI backend, PostgreSQL database, async task processing, and a React frontend that renders recognized text as structured **Markdown**.
+> An internal Optical Character Recognition (OCR) system powered by **Qwen3-VL-4B-Instruct** via **Ollama**, featuring a FastAPI backend, PostgreSQL database, Celery async task processing, and a React frontend that renders recognized text as structured **Markdown**.
 
 ---
 
@@ -24,14 +24,14 @@
 
 ## Project Overview
 
-NanoOCR is built to digitize, store, and retrieve internal organization documents from images or PDFs. Users upload a file, the system processes it through the **Qwen3-VL-4B-Instruct** model, and returns the recognized content structured as **Markdown**. All processing history is persisted in the database for future retrieval and search.
+NanoOCR is built to digitize, store, and retrieve internal organization documents from images or PDFs. Users upload a file, the system processes it through the **Qwen3-VL-4B-Instruct** model served via **Ollama**, and returns the recognized content structured as **Markdown**. All processing history is persisted in the database for future retrieval and search.
 
 ### Key Features
 
 | Feature | Description |
 |---|---|
 | 📤 File Upload | Supports images (JPG, PNG, TIFF, WebP) and PDF |
-| 🤖 Automatic OCR | Processed by the Qwen3-VL-4B-Instruct model |
+| 🤖 Automatic OCR | Processed by Qwen3-VL-4B-Instruct via Ollama |
 | 📝 Markdown Output | Results returned as structured, formatted Markdown |
 | 🗃️ Full CRUD | Create, read, update, and delete documents |
 | 🔍 Full-text Search | Search across all OCR-recognized content |
@@ -48,14 +48,19 @@ NanoOCR is built to digitize, store, and retrieve internal organization document
 └──────────────────────────┬──────────────────────────────┘
                            │ HTTP / REST API
 ┌──────────────────────────▼──────────────────────────────┐
-│                   BACKEND (FastAPI)                     │
+│                   BACKEND (FastAPI)                      │
 │   /upload  │  /ocr  │  /documents CRUD  │  /search      │
 └──────────┬──────────────────────────────────────────────┘
-           │                        │
-┌──────────▼──────────┐   ┌─────────▼────────────────────┐
-│ Qwen3-VL-4B Engine  │   │   PostgreSQL Database        │
-│  (Model Inference)  │   │   documents / ocr_results    │
-└─────────────────────┘   └──────────────────────────────┘
+           │                         │
+┌──────────▼──────────┐   ┌──────────▼───────────────────┐
+│   Celery Worker     │   │   PostgreSQL Database         │
+│  + Redis Broker     │   │   documents / ocr_results     │
+│         │           │   └──────────────────────────────┘
+│         ▼           │
+│  Ollama API         │
+│  Qwen3-VL-4B        │
+│  (via /api/chat)    │
+└─────────────────────┘
 ```
 
 ---
@@ -65,23 +70,31 @@ NanoOCR is built to digitize, store, and retrieve internal organization document
 ### Backend
 - **Python 3.11+**
 - **FastAPI** — REST API framework
-- **Qwen3-VL-4B-Instruct** — Vision-Language model for OCR (Qwen3 series by Alibaba)
+- **Ollama** — Local LLM server serving Qwen3-VL-4B-Instruct
 - **SQLAlchemy** — ORM
 - **Alembic** — Database migrations
 - **Celery + Redis** — Async task queue for OCR processing
-- **MinIO / AWS S3** — Original file storage
+- **MinIO** — S3-compatible file storage
+- **pdf2image + Pillow** — PDF to image conversion
+- **httpx** — Async HTTP client for Ollama API
 
 ### Frontend
 - **React 18 + TypeScript**
 - **Vite** — Build tool
 - **TailwindCSS** — Styling
-- **react-markdown** — Renders OCR output as Markdown
+- **react-markdown + remark-gfm** — Renders OCR output as Markdown
 - **react-dropzone** — Drag-and-drop file upload
 - **Axios** — HTTP client
 
 ### Database
 - **PostgreSQL 15** — Primary database
 - **Redis** — Cache & task queue broker
+
+### Infrastructure (Docker)
+- **Ollama** — Model serving (`localhost:11434`)
+- **PostgreSQL** — Database (`localhost:5433`)
+- **Redis** — Broker (`localhost:6380`)
+- **MinIO** — Storage (`localhost:9000`)
 
 ---
 
@@ -92,52 +105,55 @@ NanoOCR/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── v1/
-│   │   │   │   ├── endpoints/
-│   │   │   │   │   ├── documents.py     # Document CRUD endpoints
-│   │   │   │   │   ├── ocr.py           # OCR processing endpoints
-│   │   │   │   │   └── search.py        # Full-text search
-│   │   │   │   └── router.py
+│   │   │   └── v1/
+│   │   │       ├── endpoints/
+│   │   │       │   ├── documents.py     # Document CRUD endpoints
+│   │   │       │   ├── ocr.py           # OCR trigger & status endpoints
+│   │   │       │   └── search.py        # Full-text search
+│   │   │       └── router.py
 │   │   ├── core/
-│   │   │   ├── config.py                # App configuration
-│   │   │   └── security.py
+│   │   │   ├── config.py                # App configuration (pydantic-settings)
+│   │   │   ├── dependencies.py          # FastAPI dependencies
+│   │   │   ├── exceptions.py            # Custom HTTP exceptions
+│   │   │   ├── logging.py               # Logging setup
+│   │   │   └── security.py              # JWT helpers
 │   │   ├── db/
-│   │   │   ├── base.py
-│   │   │   ├── session.py
-│   │   │   └── migrations/
+│   │   │   ├── base.py                  # SQLAlchemy DeclarativeBase
+│   │   │   ├── session.py               # Engine & get_db dependency
+│   │   │   └── migrations/              # Alembic migration files
 │   │   ├── models/
 │   │   │   ├── document.py              # Document ORM model
 │   │   │   └── ocr_result.py            # OCR result ORM model
 │   │   ├── schemas/
-│   │   │   ├── document.py              # Pydantic schemas
+│   │   │   ├── document.py              # Pydantic request/response schemas
 │   │   │   └── ocr_result.py
 │   │   ├── services/
-│   │   │   ├── ocr_service.py           # Qwen3-VL-4B-Instruct inference logic
-│   │   │   ├── storage_service.py       # File upload & storage
-│   │   │   └── markdown_service.py      # Markdown formatting
+│   │   │   ├── ocr_service.py           # Ollama API inference logic
+│   │   │   ├── storage_service.py       # MinIO file upload/download
+│   │   │   ├── document_service.py      # Document CRUD logic
+│   │   │   └── ocr_result_service.py    # OCR result persistence
 │   │   ├── tasks/
-│   │   │   └── ocr_tasks.py             # Celery async tasks
-│   │   └── main.py
+│   │   │   ├── celery_app.py            # Celery instance & config
+│   │   │   └── ocr_tasks.py             # OCR Celery task (run_ocr)
+│   │   └── main.py                      # FastAPI app entrypoint
+│   ├── alembic.ini
 │   ├── requirements.txt
 │   └── Dockerfile
 │
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── FileUploader/            # File upload area
+│   │   │   ├── FileUploader/            # Drag-and-drop upload
 │   │   │   ├── DocumentViewer/          # Markdown output viewer
 │   │   │   ├── DocumentList/            # Document list & management
 │   │   │   └── StatusBadge/             # OCR status indicator
 │   │   ├── pages/
-│   │   │   ├── Home.tsx
-│   │   │   ├── DocumentDetail.tsx
-│   │   │   └── Dashboard.tsx
-│   │   ├── api/
-│   │   │   └── client.ts                # Axios API client
-│   │   ├── hooks/
-│   │   │   └── useOCR.ts
-│   │   └── types/
-│   │       └── document.ts
+│   │   │   ├── Home.tsx                 # Upload + OCR split view
+│   │   │   ├── DocumentDetail.tsx       # Single document view
+│   │   │   └── Dashboard.tsx            # All documents dashboard
+│   │   ├── api/client.ts                # Axios API client
+│   │   ├── hooks/useOCR.ts              # Upload + polling hook (2min timeout)
+│   │   └── types/document.ts            # TypeScript interfaces
 │   ├── package.json
 │   └── Dockerfile
 │
@@ -152,61 +168,37 @@ NanoOCR/
 
 ### Table: `documents`
 
-Stores metadata for each uploaded document.
-
 ```sql
 CREATE TABLE documents (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name          VARCHAR(255) NOT NULL,           -- Original file name
-    file_path     TEXT NOT NULL,                   -- File path on storage
-    file_type     VARCHAR(50) NOT NULL,             -- File type: image / pdf
-    file_size     BIGINT,                           -- File size in bytes
+    name          VARCHAR(255) NOT NULL,
+    file_path     TEXT NOT NULL,
+    file_type     VARCHAR(50) NOT NULL,             -- image | pdf
+    file_size     BIGINT,
+    mime_type     VARCHAR(100),
     status        VARCHAR(50) DEFAULT 'pending',    -- pending | processing | done | failed
-    uploaded_by   VARCHAR(100),                    -- Uploader identifier
+    uploaded_by   VARCHAR(100),
     created_at    TIMESTAMPTZ DEFAULT NOW(),
     updated_at    TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
-**`status` values:**
-
-| Value | Description |
-|---|---|
-| `pending` | Queued, awaiting processing |
-| `processing` | OCR in progress |
-| `done` | Successfully completed |
-| `failed` | Processing error occurred |
-
----
-
 ### Table: `ocr_results`
-
-Stores the OCR output for each document.
 
 ```sql
 CREATE TABLE ocr_results (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id     UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    raw_text        TEXT,                           -- Raw recognized text
-    markdown_output TEXT,                           -- Formatted Markdown output
-    confidence      FLOAT,                          -- Overall confidence score (0.0 – 1.0)
-    language        VARCHAR(20) DEFAULT 'en',       -- Detected language
-    page_count      INTEGER DEFAULT 1,              -- Number of pages (for PDFs)
-    model_version   VARCHAR(50),                    -- Qwen3-VL-4B-Instruct model version used
-    processing_time FLOAT,                          -- Processing duration in seconds
-    error_message   TEXT,                           -- Error details if failed
+    raw_text        TEXT,
+    markdown_output TEXT,
+    confidence      FLOAT,
+    language        VARCHAR(20) DEFAULT 'en',
+    page_count      INTEGER DEFAULT 1,
+    model_version   VARCHAR(50),
+    processing_time FLOAT,
+    error_message   TEXT,
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
-```
-
----
-
-### Table Relationship
-
-```
-documents (1) ──── (1) ocr_results
-     │
-     └── id (UUID) → document_id in ocr_results
 ```
 
 ---
@@ -229,7 +221,7 @@ Base URL: `http://localhost:8000/api/v1`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `POST` | `/ocr/process/{document_id}` | Trigger OCR for a document |
+| `POST` | `/ocr/process/{document_id}` | Enqueue OCR task via Celery |
 | `GET` | `/ocr/result/{document_id}` | Retrieve OCR result |
 | `GET` | `/ocr/status/{document_id}` | Check processing status |
 
@@ -241,43 +233,9 @@ Base URL: `http://localhost:8000/api/v1`
 
 ---
 
-### Example Request / Response
-
-**Upload a file:**
-```http
-POST /api/v1/documents/upload
-Content-Type: multipart/form-data
-
-file: [binary]
-```
-
-```json
-{
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "name": "contract_2024.pdf",
-  "status": "pending",
-  "created_at": "2024-01-15T08:30:00Z"
-}
-```
-
-**OCR result:**
-```json
-{
-  "document_id": "550e8400-e29b-41d4-a716-446655440000",
-  "markdown_output": "# Employment Contract\n\n**Date:** January 15, 2024\n\n...",
-  "confidence": 0.97,
-  "language": "en",
-  "processing_time": 2.34
-}
-```
-
----
-
 ## Frontend UI
 
 ### Main Screen — Upload & OCR
-
-The interface is split into two panels:
 
 ```
 ┌─────────────────────┬─────────────────────────────────┐
@@ -298,98 +256,142 @@ The interface is split into two panels:
 └─────────────────────┴─────────────────────────────────┘
 ```
 
-- **Left panel** — File upload area with drag-and-drop, image/PDF preview, and the OCR trigger button
-- **Right panel** — OCR output rendered as full Markdown with headings, tables, lists, and bold text
-
-### Dashboard Screen
-
-Displays:
-- Total number of processed documents
-- OCR task queue status
-- Recent documents list with filtering and sorting
-- CRUD actions — view, rename, delete
-
 ---
 
 ## Installation
 
-### Requirements
+### Prerequisites
 
 - Docker & Docker Compose
-- Python 3.11+ (for local setup without Docker)
-- Node.js 18+ (for local setup without Docker)
-- GPU recommended for Qwen3-VL-4B-Instruct (CUDA 11.8+)
+- Python 3.11+
+- Node.js 18+
+- Ollama with Qwen3-VL-4B-Instruct model
 
-### Quick Start with Docker
+### Step 1 — Pull Qwen3-VL model into Ollama
 
 ```bash
-# 1. Clone the repository
-git clone https://github.com/lecuong1502/NanoOCR.git
-cd NanoOCR
-
-# 2. Copy the environment config
-cp .env.example .env
-
-# 3. Edit .env with your settings
-nano .env
-
-# 4. Start all services
-docker compose up -d
-
-# 5. Run database migrations
-docker compose exec backend alembic upgrade head
+docker exec ollama ollama pull adelnazmy2002/Qwen3-VL-4B-Instruct:Q4_K_M
+# or any Qwen3-VL variant available in your Ollama instance
 ```
 
-Access the app:
-- Frontend: http://localhost:3000
-- API Docs (Swagger): http://localhost:8000/docs
-- API Docs (ReDoc): http://localhost:8000/redoc
-
-### Local Setup (without Docker)
+Verify the model is available:
 
 ```bash
-# Backend
-cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --port 8000
+docker exec ollama ollama list
+```
 
-# Frontend (new terminal)
-cd frontend
+### Step 2 — Start infrastructure services
+
+```bash
+cd NanoOCR
+docker compose up -d db redis minio
+```
+
+Wait until all are healthy:
+
+```bash
+docker ps | grep -E "nanoocr_db|nanoocr_redis|nanoocr_minio"
+```
+
+### Step 3 — Configure environment
+
+```bash
+# Copy and edit the backend .env
+cp .env.example backend/.env
+nano backend/.env
+```
+
+Key values to set (see [Environment Variables](#environment-variables)):
+- `DATABASE_URL` — use `localhost` with the mapped port
+- `STORAGE_ENDPOINT` — use `http://localhost:9000`
+- `REDIS_URL` / `CELERY_BROKER_URL` — use `localhost` with the mapped port
+- `OLLAMA_BASE_URL` — `http://localhost:11434`
+- `OCR_MODEL_NAME` — exact model name from `ollama list`
+
+### Step 4 — Run database migrations
+
+```bash
+cd backend
+source ../.venv/bin/activate   # activate your virtual environment
+alembic upgrade head
+```
+
+### Step 5 — Install backend dependencies
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+### Step 6 — Start backend services
+
+Open **3 separate terminals**, all from the `backend/` directory:
+
+**Terminal 1 — FastAPI:**
+```bash
+cd NanoOCR/backend
+uvicorn app.main:app --reload --port 8000
+```
+
+**Terminal 2 — Celery worker:**
+```bash
+cd NanoOCR/backend
+celery -A app.tasks.celery_app worker --loglevel=info -Q ocr --concurrency=1
+```
+
+### Step 7 — Start frontend
+
+**Terminal 3:**
+```bash
+cd NanoOCR/frontend
 npm install
 npm run dev
 ```
+
+### Access the app
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:3000 |
+| API Docs (Swagger) | http://localhost:8000/docs |
+| MinIO Console | http://localhost:9001 |
 
 ---
 
 ## Environment Variables
 
-Create a `.env` file from `.env.example`:
+Create `backend/.env` with the following (use `localhost` for all services when running locally):
 
 ```env
-# Database
-DATABASE_URL=postgresql://user:password@localhost:5433/ocr_db
+# PostgreSQL
+POSTGRES_USER=ocr_user
+POSTGRES_PASSWORD=ocr_pass
+POSTGRES_DB=ocr_db
+DATABASE_URL=postgresql://ocr_user:ocr_pass@localhost:5433/ocr_db
 
-# Redis (Celery broker)
-REDIS_URL=redis://localhost:6379/0
+# Redis
+REDIS_URL=redis://localhost:6380/0
+CELERY_BROKER_URL=redis://localhost:6380/0
+CELERY_RESULT_BACKEND=redis://localhost:6380/1
 
-# Storage (MinIO or S3)
+# MinIO
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
 STORAGE_ENDPOINT=http://localhost:9000
 STORAGE_ACCESS_KEY=minioadmin
 STORAGE_SECRET_KEY=minioadmin
 STORAGE_BUCKET=ocr-documents
 
-# OCR Model
-OCR_MODEL_PATH=./models/Qwen3-VL-4B-Instruct
-OCR_MODEL_NAME=Qwen/Qwen3-VL-4B-Instruct
-OCR_DEVICE=cuda
+# Ollama OCR
+OLLAMA_BASE_URL=http://localhost:11434
+OCR_MODEL_NAME=adelnazmy2002/Qwen3-VL-4B-Instruct:Q4_K_M
+OCR_MAX_NEW_TOKENS=2048
 
 # App
-SECRET_KEY=your-secret-key-here
-ALLOWED_ORIGINS=["http://localhost:3000"]
+SECRET_KEY=change-me-in-production
 ```
+
+> ⚠️ **Important:** Do NOT use Docker service hostnames (`db`, `minio`, `redis`) in `backend/.env` when running locally. Always use `localhost` with the mapped host ports.
 
 ---
 
@@ -397,11 +399,11 @@ ALLOWED_ORIGINS=["http://localhost:3000"]
 
 ### 1. Upload a Document
 
-Go to the home page → drag and drop or click to select a file (JPG, PNG, PDF, TIFF) → click **"Run OCR"**.
+Go to `http://localhost:3000` → drag and drop or click to select a file (JPG, PNG, PDF, TIFF) → click **"Run OCR"**.
 
 ### 2. View the Result
 
-Once processed (typically 2–10 seconds), the result appears in the **right panel** rendered as formatted Markdown.
+Once processed (typically 3–10 seconds), the result appears in the **right panel** rendered as formatted Markdown.
 
 ### 3. Manage Documents
 
@@ -409,70 +411,55 @@ Navigate to the **"Documents"** tab to browse history, search content, reload re
 
 ### 4. Search Content
 
-Use the search bar to perform a full-text search across all previously processed documents.
+Use the search bar to perform a full-text search across all previously OCR-processed documents.
 
 ---
 
 ## Markdown Output Format
 
-The Qwen3-VL-4B-Instruct model combined with `markdown_service` automatically structures the output:
+Qwen3-VL-4B-Instruct returns structured Markdown output:
 
 ````markdown
 # Document Title
 
 **Document Type:** Employment Contract
 **Date:** January 15, 2024
-**Department:** Human Resources
 
 ---
 
 ## I. Party Information
 
-**Party A (Employer):**
-Company name: ...
-Address: ...
-
-**Party B (Employee):**
-Full name: ...
-Date of birth: ...
+**Party A:** Company name ...
+**Party B:** Full name ...
 
 ---
 
 ## II. Contract Terms
 
 1. Job position: ...
-2. Contract duration: ...
-3. Salary: ...
+2. Salary: ...
 
 ---
 
-## III. Appendix Table
+## III. Table
 
-| No. | Item        | Value   |
-|-----|-------------|---------|
-| 1   | Base salary | $2,000  |
-| 2   | Allowance   | $300    |
-
----
-
-> ⚠️ **OCR Note:** Confidence: 97% — Language: English
+| No. | Item        | Value  |
+|-----|-------------|--------|
+| 1   | Base salary | $2,000 |
+| 2   | Allowance   | $300   |
 ````
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature-name`
-3. Commit your changes: `git commit -m 'feat: add feature X'`
-4. Push to the branch: `git push origin feature/your-feature-name`
-5. Open a Pull Request
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
 ## License
 
-This project is distributed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+This project is distributed under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 ---
 
